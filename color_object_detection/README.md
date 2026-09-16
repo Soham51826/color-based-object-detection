@@ -13,15 +13,21 @@ benchmark harness, and a comprehensive unit-test suite.
 
 1. [Features](#features)
 2. [Project Structure](#project-structure)
-3. [Installation](#installation)
-4. [Quick Start](#quick-start)
-5. [Launching the GUI Application](#launching-the-gui-application)
-6. [Running the Benchmark Suite](#running-the-benchmark-suite)
-7. [Running the Unit Tests](#running-the-unit-tests)
-8. [Algorithm Explanation](#algorithm-explanation)
-9. [Configuration Reference](#configuration-reference)
-10. [Troubleshooting](#troubleshooting)
-11. [License](#license)
+3. [Prerequisites & Installation](#prerequisites--installation)
+4. [Step-by-Step: How to Run](#step-by-step-how-to-run)
+   - [Step 1 — Open Terminal & Navigate to Project](#step-1--open-terminal--navigate-to-project)
+   - [Step 2 — Launch the GUI Desktop App (Recommended)](#step-2--launch-the-gui-desktop-app-recommended)
+   - [Step 3 — Run Live Webcam Tracking via CLI](#step-3--run-live-webcam-tracking-via-cli)
+   - [Step 4 — Run Automated Unit Tests (85 Tests)](#step-4--run-automated-unit-tests-85-tests)
+   - [Step 5 — Run Benchmark Suite & Generate Plots](#step-5--run-benchmark-suite--generate-plots)
+5. [Quick Start (Python API)](#quick-start-python-api)
+6. [GUI Controls & Dual-Canvas Interface](#gui-controls--dual-canvas-interface)
+7. [Running the Benchmark Suite](#running-the-benchmark-suite)
+8. [Running the Unit Tests](#running-the-unit-tests)
+9. [Algorithm Explanation](#algorithm-explanation)
+10. [Configuration Reference](#configuration-reference)
+11. [Troubleshooting](#troubleshooting)
+12. [License](#license)
 
 ---
 
@@ -71,49 +77,134 @@ color_object_detection/
 
 ---
 
-## Installation
+## Prerequisites & Installation
 
-### Prerequisites
+### System Requirements
+- **Python**: Version **3.6.8 or newer** (tested on Python 3.6, 3.8, 3.10, and 3.12).
+- **Webcam**: Built-in or external USB webcam (optional; synthetic benchmarks and pre-recorded videos work without a camera).
+- **OS**: Windows 10/11, macOS, or Linux.
 
-- Python **3.9** or newer
-- A USB or built-in webcam (for live capture; optional for benchmarking)
-
-### Step 1 — Clone / download the project
-
+### Step 1 — Clone the Repository
 ```bash
-git clone https://github.com/mpstme-ivp/color-object-detection.git
-cd color_object_detection
+git clone https://github.com/Soham51826/color-based-object-detection.git
+cd color-based-object-detection
 ```
 
-### Step 2 — Create a virtual environment (recommended)
-
+### Step 2 — Create and Activate a Virtual Environment (Optional)
 ```bash
-# Windows
+# Windows (PowerShell)
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 
-# macOS / Linux
+# Windows (Command Prompt)
+python -m venv .venv
+.venv\Scripts\activate.bat
+
+# Linux / macOS
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-### Step 3 — Install dependencies
-
+### Step 3 — Install Dependencies
 ```bash
+cd color_object_detection
 pip install -r requirements.txt
 ```
 
-### Step 4 — Install the package in editable mode (optional)
+---
 
-```bash
-pip install -e .
+## Step-by-Step: How to Run
+
+### Step 1 — Open Terminal & Navigate to Project
+Make sure your terminal is inside the `color_object_detection` directory where `src/` is located:
+```powershell
+# Windows PowerShell / CMD:
+cd "c:\Users\sahil\OneDrive\Desktop\Color - based Object Detection\color_object_detection"
+
+# Or relative from repo root:
+cd color_object_detection
 ```
-
-This registers the `color-detect` CLI command.
 
 ---
 
-## Quick Start
+### Step 2 — Launch the GUI Desktop App (Recommended)
+The full-featured graphical application provides real-time dual-canvas visualization, calibration sliders, and snapshot tools:
+
+```bash
+# Launch with default webcam (index 0)
+python -m src.gui_app
+
+# Launch with a specific external webcam index (e.g. index 1)
+python -m src.gui_app --source 1
+
+# Launch with a pre-recorded video file
+python -m src.gui_app --source path/to/sample_video.mp4
+```
+
+> **What happens**:
+> - A desktop window titled **"Color-Based Object Detection & Tracking System"** will appear.
+> - Click **▶ Start Feed** to start streaming from your camera.
+> - Select any color (**Red**, **Green**, **Blue**, **Yellow**, or **Custom**) to isolate its binary mask on the right canvas.
+> - Adjust the **H / S / V sliders** in real time to fine-tune detection for your lighting conditions.
+> - Click **📸 Snapshot** to save timestamped detection results to the `snapshots/` folder.
+
+---
+
+### Step 3 — Run Live Webcam Tracking via CLI
+If you prefer a lightweight OpenCV window without the Tkinter GUI:
+
+```bash
+# Run tracker on default camera (index 0) tracking all 4 colors
+python -m src.tracker --source 0
+
+# Track specific colors only (e.g., Red and Blue)
+python -m src.tracker --source 0 --colors Red Blue
+
+# Run against a video file
+python -m src.tracker --source path/to/video.mp4
+```
+
+> **Controls**: Press <kbd>q</kbd> or <kbd>Esc</kbd> while focused on the OpenCV window to exit.
+
+---
+
+### Step 4 — Run Automated Unit Tests (85 Tests)
+Run the test suite to verify HSV boundary math, red wrap-around union, centroid calculations, and noise filtering:
+
+```bash
+# Run all tests with verbose output
+python -m pytest tests -v
+
+# Run with test coverage report
+python -m pytest tests -v --cov=src
+```
+
+> **Expected output**: All **85 passed** in ~1.3 seconds.
+
+---
+
+### Step 5 — Run Benchmark Suite & Generate Plots
+Run the quantitative benchmark harness to evaluate detection accuracy (Precision, Recall, F1, IoU) and latency across resolutions (QVGA to 1080p):
+
+```bash
+# Run default benchmark (generates synthetic scenes & evaluation charts)
+python -m benchmarks.evaluate
+
+# Custom output directory
+python -m benchmarks.evaluate --out ./benchmark_results/
+
+# High-precision benchmark (more frames, slower)
+python -m benchmarks.evaluate --frames 500
+```
+
+> **Generated Plots (saved to `benchmark_results/`)**:
+> - `benchmark_curves.png`: End-to-end FPS vs. resolution + F1-score/IoU vs. ambient lux.
+> - `confusion_matrix.png`: Per-class Precision, Recall, and F1 performance heatmap.
+> - `pipeline_stages.png`: Detailed microsecond latency breakdown per pipeline stage.
+
+---
+
+## Quick Start (Python API)
 
 ### Headless test (no GUI, no camera needed)
 
