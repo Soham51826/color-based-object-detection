@@ -41,7 +41,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 try:
-    import customtkinter as ctk
+    import customtkinter as ctk  # type: ignore
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     _USE_CTK = True
