@@ -45,7 +45,9 @@ try:
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     _USE_CTK = True
-except ImportError:
+except Exception:
+    # customtkinter may be installed but require Python 3.7+ (uses
+    # `from __future__ import annotations`).  Fall back to plain Tkinter.
     _USE_CTK = False
 
 import tkinter as tk
