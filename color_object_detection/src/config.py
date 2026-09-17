@@ -16,6 +16,8 @@ HSV Color Space reference (OpenCV conventions)
 
 import os
 from pathlib import Path
+
+import cv2 as _cv2
 import numpy as np
 
 # Load environment variables if python-dotenv is installed
@@ -148,7 +150,6 @@ CENTROID_DOT_RADIUS = 5
 CROSSHAIR_ARM_LENGTH = 15
 CROSSHAIR_THICKNESS = 2
 
-import cv2 as _cv2
 FONT = _cv2.FONT_HERSHEY_SIMPLEX
 FONT_SCALE = 0.55
 FONT_THICKNESS = 1

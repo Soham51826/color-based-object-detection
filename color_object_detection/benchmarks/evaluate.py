@@ -26,17 +26,16 @@ Usage
 """
 
 import argparse
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
 
 import cv2
-import numpy as np
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import numpy as np
 
 # Add parent directory to path so we can import the src package
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
