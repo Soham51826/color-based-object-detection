@@ -394,29 +394,125 @@ class ColorTracker(object):
 
 
 # ---------------------------------------------------------------------------
-# Convenience: open a VideoCapture with preferred settings
+# Synthetic Capture Fallback
 # ---------------------------------------------------------------------------
 
-def open_capture(source=None, width=None, height=None, fps=None):
-    """Open a cv2.VideoCapture and configure its resolution and FPS.
+class SyntheticCapture(object):
+    """Fallback video capture that generates synthetic frames with moving colored targets.
+
+    Provides the same interface as cv2.VideoCapture (isOpened, read, get, set, release)
+    so that downstream pipelines, GUI threads, and test scripts function seamlessly
+    even when no physical webcam or video file is available.
+    """
+
+    def __init__(self, width=640, height=480, fps=30):
+        self._width = int(width)
+        self._height = int(height)
+        self._fps = float(fps)
+        self._is_opened = True
+        self._frame_idx = 0
+
+        # Moving targets in BGR space
+        self._targets = [
+            {"name": "Red",    "color": (0, 0, 220),   "pos": [120.0, 150.0], "vel": [3.0, 2.0],   "size": 32},
+            {"name": "Green",  "color": (30, 200, 30),  "pos": [320.0, 240.0], "vel": [-2.5, 2.5],  "size": 36},
+            {"name": "Blue",   "color": (220, 50, 30),  "pos": [460.0, 180.0], "vel": [2.2, -2.8],  "size": 30},
+            {"name": "Yellow", "color": (0, 220, 220),  "pos": [220.0, 340.0], "vel": [-2.4, -1.8], "size": 34},
+        ]
+
+    def isOpened(self):
+        return self._is_opened
+
+    def read(self):
+        if not self._is_opened:
+            return False, None
+
+        self._frame_idx += 1
+        # Create dark canvas
+        frame = np.full((self._height, self._width, 3), 35, dtype=np.uint8)
+
+        # Update and render targets
+        for t in self._targets:
+            t["pos"][0] += t["vel"][0]
+            t["pos"][1] += t["vel"][1]
+
+            r = t["size"]
+            if t["pos"][0] - r < 10:
+                t["pos"][0] = float(10 + r)
+                t["vel"][0] = abs(t["vel"][0])
+            elif t["pos"][0] + r > self._width - 10:
+                t["pos"][0] = float(self._width - 10 - r)
+                t["vel"][0] = -abs(t["vel"][0])
+
+            if t["pos"][1] - r < 10:
+                t["pos"][1] = float(10 + r)
+                t["vel"][1] = abs(t["vel"][1])
+            elif t["pos"][1] + r > self._height - 40:
+                t["pos"][1] = float(self._height - 40 - r)
+                t["vel"][1] = -abs(t["vel"][1])
+
+            cx = int(t["pos"][0])
+            cy = int(t["pos"][1])
+            cv2.circle(frame, (cx, cy), r, t["color"], -1)
+
+        # Subtle banner indicator
+        banner = "SYNTHETIC TEST FEED (NO PHYSICAL CAMERA)"
+        cv2.putText(
+            frame,
+            banner,
+            (15, self._height - 15),
+            config.FONT,
+            0.5,
+            (0, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        return True, frame
+
+    def get(self, prop_id):
+        if prop_id == cv2.CAP_PROP_FRAME_WIDTH:
+            return float(self._width)
+        elif prop_id == cv2.CAP_PROP_FRAME_HEIGHT:
+            return float(self._height)
+        elif prop_id == cv2.CAP_PROP_FPS:
+            return float(self._fps)
+        return 0.0
+
+    def set(self, prop_id, value):
+        if prop_id == cv2.CAP_PROP_FRAME_WIDTH:
+            self._width = int(value)
+        elif prop_id == cv2.CAP_PROP_FRAME_HEIGHT:
+            self._height = int(value)
+        elif prop_id == cv2.CAP_PROP_FPS:
+            self._fps = float(value)
+        return True
+
+    def release(self):
+        self._is_opened = False
+
+
+# ---------------------------------------------------------------------------
+# Convenience: open a VideoCapture with preferred settings and safe fallback
+# ---------------------------------------------------------------------------
+
+def open_capture(source=None, width=None, height=None, fps=None, fallback_to_synthetic=True):
+    """Open a cv2.VideoCapture with safe exception handling and synthetic fallback.
 
     Parameters
     ----------
-    source : int or str
-        Camera index or path to a video file.
-    width, height : int
+    source : int or str, optional
+        Camera index or path to a video file. Defaults to config.DEFAULT_CAMERA_INDEX.
+    width, height : int, optional
         Requested capture dimensions in pixels.
-    fps : int
+    fps : int, optional
         Requested capture frame rate.
+    fallback_to_synthetic : bool, optional
+        If True, returns a SyntheticCapture instance instead of raising RuntimeError
+        when the physical camera or video file is inaccessible.
 
     Returns
     -------
-    cv2.VideoCapture
-
-    Raises
-    ------
-    RuntimeError
-        If the capture device cannot be opened.
+    cv2.VideoCapture or SyntheticCapture
     """
     if source is None:
         source = config.DEFAULT_CAMERA_INDEX
@@ -427,19 +523,51 @@ def open_capture(source=None, width=None, height=None, fps=None):
     if fps is None:
         fps = config.CAPTURE_FPS
 
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        raise RuntimeError(
-            "Cannot open video source '{}'. "
-            "Check camera index or file path.".format(source)
+    cap = None
+    is_valid = False
+
+    try:
+        cap = cv2.VideoCapture(source)
+        if cap.isOpened():
+            ok, test_frame = cap.read()
+            if ok and test_frame is not None:
+                is_valid = True
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                cap.set(cv2.CAP_PROP_FPS, fps)
+            else:
+                logger.warning(
+                    "Capture source '%s' opened but failed to produce a frame.", source
+                )
+        else:
+            logger.warning("Capture source '%s' could not be opened.", source)
+    except Exception as exc:
+        logger.warning(
+            "Exception while opening capture source '%s': %s", source, exc
         )
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_FPS,          fps)
+    if not is_valid:
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
-    actual_w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if fallback_to_synthetic:
+            logger.warning(
+                "Falling back to synthetic animated test feed (width=%d, height=%d, fps=%d).",
+                width, height, fps,
+            )
+            return SyntheticCapture(width=width, height=height, fps=fps)
+        else:
+            raise RuntimeError(
+                "Cannot open video source '{}' and synthetic fallback is disabled.".format(
+                    source
+                )
+            )
+
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
 
     logger.info(

@@ -24,7 +24,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config import COLOR_PRESETS, MIN_CONTOUR_AREA, MORPH_KERNEL_SIZE
-from src.tracker import BlobInfo, ColorTracker, FrameResult
+from src.tracker import BlobInfo, ColorTracker, FrameResult, SyntheticCapture, open_capture
 from src.utils import FPSCounter, StageTimer, compute_centroid
 
 
@@ -428,3 +428,66 @@ class TestStageTimer(object):
         with timer:
             pass
         assert isinstance(timer.elapsed_ms, float)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic capture and open_capture fallback
+# ---------------------------------------------------------------------------
+
+class TestSyntheticCapture(object):
+    """Unit tests for the fallback SyntheticCapture device."""
+
+    def test_synthetic_capture_lifecycle(self):
+        cap = SyntheticCapture(width=320, height=240, fps=15)
+        assert cap.isOpened() is True
+        assert cap.get(cv2.CAP_PROP_FRAME_WIDTH) == 320.0
+        assert cap.get(cv2.CAP_PROP_FRAME_HEIGHT) == 240.0
+        assert cap.get(cv2.CAP_PROP_FPS) == 15.0
+
+        ok, frame = cap.read()
+        assert ok is True
+        assert frame is not None
+        assert frame.shape == (240, 320, 3)
+        assert frame.dtype == np.uint8
+
+        # Test set properties
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        assert cap.get(cv2.CAP_PROP_FRAME_WIDTH) == 640.0
+
+        cap.release()
+        assert cap.isOpened() is False
+        ok_after, frame_after = cap.read()
+        assert ok_after is False
+        assert frame_after is None
+
+    def test_synthetic_capture_runs_with_color_tracker(self):
+        cap = SyntheticCapture(width=640, height=480, fps=30)
+        tracker = ColorTracker()
+
+        # Run 5 frames through tracker
+        for _ in range(5):
+            ok, frame = cap.read()
+            assert ok is True
+            result = tracker.process_frame(frame)
+            assert isinstance(result, FrameResult)
+            assert result.annotated_frame.shape == (480, 640, 3)
+        cap.release()
+
+
+class TestOpenCaptureFallback(object):
+    """Unit tests for open_capture error handling and fallback behavior."""
+
+    def test_open_capture_fallback_when_invalid_device(self):
+        # Index -999 is invalid on all standard systems
+        cap = open_capture(source=-999, fallback_to_synthetic=True)
+        assert isinstance(cap, SyntheticCapture)
+        assert cap.isOpened() is True
+        ok, frame = cap.read()
+        assert ok is True
+        assert frame is not None
+        cap.release()
+
+    def test_open_capture_raises_when_fallback_disabled(self):
+        with pytest.raises(RuntimeError):
+            open_capture(source=-999, fallback_to_synthetic=False)
+

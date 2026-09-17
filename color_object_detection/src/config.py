@@ -14,24 +14,55 @@ HSV Color Space reference (OpenCV conventions)
   Value      : 0 - 255
 """
 
+import os
+from pathlib import Path
 import numpy as np
+
+# Load environment variables if python-dotenv is installed
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Base paths
+# ---------------------------------------------------------------------------
+
+#: Root directory of the package/project
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+#: Directory for saving snapshot frames
+SNAPSHOT_DIR = Path(os.getenv("SNAPSHOT_DIR", str(BASE_DIR / "snapshots")))
+
+#: Directory for benchmark plots and outputs
+BENCHMARK_RESULTS_DIR = Path(
+    os.getenv("BENCHMARK_RESULTS_DIR", str(BASE_DIR / "benchmark_results"))
+)
 
 # ---------------------------------------------------------------------------
 # Camera / capture settings
 # ---------------------------------------------------------------------------
 
+def _get_camera_index(default=0):
+    val = os.getenv("DEFAULT_CAMERA_INDEX", str(default))
+    try:
+        return int(val)
+    except ValueError:
+        return val
+
 #: Default camera index passed to cv2.VideoCapture(). 0 = first USB/built-in
-#: webcam.  Override via CLI or GUI.
-DEFAULT_CAMERA_INDEX = 0
+#: webcam. Override via CLI, GUI, or DEFAULT_CAMERA_INDEX env var.
+DEFAULT_CAMERA_INDEX = _get_camera_index(0)
 
 #: Preferred capture width in pixels.
-CAPTURE_WIDTH = 640
+CAPTURE_WIDTH = int(os.getenv("CAPTURE_WIDTH", "640"))
 
 #: Preferred capture height in pixels.
-CAPTURE_HEIGHT = 480
+CAPTURE_HEIGHT = int(os.getenv("CAPTURE_HEIGHT", "480"))
 
 #: Requested frames per second from the capture device.
-CAPTURE_FPS = 30
+CAPTURE_FPS = int(os.getenv("CAPTURE_FPS", "30"))
 
 # ---------------------------------------------------------------------------
 # Pre-processing
@@ -62,7 +93,7 @@ MORPH_CLOSE_ITERATIONS = 2
 # ---------------------------------------------------------------------------
 
 #: Contours with a pixel area smaller than this threshold are discarded.
-MIN_CONTOUR_AREA = 500
+MIN_CONTOUR_AREA = int(os.getenv("MIN_CONTOUR_AREA", "500"))
 
 #: Maximum number of simultaneously tracked blobs per color class.
 MAX_BLOBS_PER_COLOR = 5
@@ -126,7 +157,7 @@ FONT_THICKNESS = 1
 # Performance / FPS smoothing
 # ---------------------------------------------------------------------------
 
-FPS_SMOOTHING_WINDOW = 30
+FPS_SMOOTHING_WINDOW = int(os.getenv("FPS_SMOOTHING_WINDOW", "30"))
 
 # ---------------------------------------------------------------------------
 # Benchmark settings

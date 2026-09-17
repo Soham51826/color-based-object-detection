@@ -115,9 +115,9 @@ class _CaptureWorker(threading.Thread):
 
     def run(self):
         try:
-            cap = open_capture(self._source)
-        except RuntimeError as exc:
-            logger.error("CaptureWorker: %s", exc)
+            cap = open_capture(self._source, fallback_to_synthetic=True)
+        except Exception as exc:
+            logger.error("CaptureWorker failed to initialize video source: %s", exc)
             return
 
         while not self._stop_event.is_set():
@@ -125,9 +125,14 @@ class _CaptureWorker(threading.Thread):
                 threading.Event().wait(0.05)
                 continue
 
-            ok, frame = cap.read()
-            if not ok:
-                logger.warning("CaptureWorker: cap.read() returned False.")
+            try:
+                ok, frame = cap.read()
+            except Exception as exc:
+                logger.error("CaptureWorker error reading frame: %s", exc)
+                break
+
+            if not ok or frame is None:
+                logger.warning("CaptureWorker: cap.read() returned False or empty frame.")
                 break
 
             try:
@@ -135,7 +140,10 @@ class _CaptureWorker(threading.Thread):
             except queue.Full:
                 pass  # drop frame if UI is slow
 
-        cap.release()
+        try:
+            cap.release()
+        except Exception:
+            pass
         logger.info("CaptureWorker: exited cleanly.")
 
 
@@ -164,7 +172,7 @@ class ColorDetectionApp(object):
             self._root = tk.Tk()
             self._root.configure(bg="#1e1e2e")
 
-        self._root.title("Color-Based Object Detection -- MPSTME IVP")
+        self._root.title("Color-Based Object Detection and Tracking System")
         self._root.resizable(False, False)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -402,11 +410,11 @@ class ColorDetectionApp(object):
 
         frame  = self._last_annotated.copy()
         ts     = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = Path("snapshots")
-        out_dir.mkdir(exist_ok=True)
+        out_dir = config.SNAPSHOT_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
         path   = out_dir / "snapshot_{}.png".format(ts)
         cv2.imwrite(str(path), frame)
-        msgbox.showinfo("Snapshot saved", "Frame saved to:\n{}".format(path.resolve()))
+        msgbox.showinfo("Snapshot saved", "Frame saved successfully to:\n{}".format(path.name))
 
     def _on_color_select(self, selection):
         if selection != "Custom":

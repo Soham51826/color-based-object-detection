@@ -19,15 +19,14 @@ LONG_DESCRIPTION = (HERE / "README.md").read_text(encoding="utf-8")
 setup(
     name="color-object-detection",
     version="1.0.0",
-    author="MPSTME IVP Team",
-    author_email="ivp@nmims.edu",
+    author="Open Source Contributors",
     description=(
-        "Color-Based Object Detection and Real-Time Tracking System — "
-        "MPSTME, SVKM's NMIMS Image and Video Processing Project"
+        "Production-ready color-based object detection and real-time tracking "
+        "system in OpenCV"
     ),
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
-    url="https://github.com/mpstme-ivp/color-object-detection",
+    url="https://github.com/Soham51826/color-based-object-detection",
     license="MIT",
     packages=find_packages(exclude=["tests*"]),
     python_requires=">=3.9",
@@ -38,6 +37,7 @@ setup(
         "Pillow>=10.0.0",
         "scipy>=1.11.0",
         "customtkinter>=5.2.0",
+        "python-dotenv>=1.0.0",
     ],
     extras_require={
         "dev": [

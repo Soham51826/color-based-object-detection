@@ -546,8 +546,8 @@ def _parse_args():
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("."),
-        help="Directory to save output plots.",
+        default=config.BENCHMARK_RESULTS_DIR,
+        help="Directory to save output plots (defaults to config.BENCHMARK_RESULTS_DIR).",
     )
     parser.add_argument(
         "--frames",

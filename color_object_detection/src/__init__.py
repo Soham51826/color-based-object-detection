@@ -6,4 +6,4 @@ and GUI application for the Color-Based Object Detection System.
 """
 
 __version__ = "1.0.0"
-__author__  = "MPSTME IVP Project"
+__author__  = "Open Source Contributors"

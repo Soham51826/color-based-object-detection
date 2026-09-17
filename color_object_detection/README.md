@@ -1,6 +1,6 @@
 # Color-Based Object Detection and Real-Time Tracking System
 
-> **MPSTME, SVKM's NMIMS — Image and Video Processing (IVP) Project**
+> **Production-Ready, Modular Computer Vision Pipeline for Real-Time Color Detection and Tracking**
 
 A production-ready, modular Python system that uses the HSV colour space to
 detect and track coloured objects in real time via a webcam or pre-recorded
@@ -117,12 +117,12 @@ pip install -r requirements.txt
 
 ### Step 1 — Open Terminal & Navigate to Project
 Make sure your terminal is inside the `color_object_detection` directory where `src/` is located:
-```powershell
-# Windows PowerShell / CMD:
-cd "c:\Users\sahil\OneDrive\Desktop\Color - based Object Detection\color_object_detection"
-
-# Or relative from repo root:
+```bash
+# Navigate into the package directory:
 cd color_object_detection
+
+# (Optional) Set up local environment configuration
+cp .env.example .env
 ```
 
 ---
@@ -510,15 +510,14 @@ COLOR_PRESETS["Orange"] = {
 
 ## Troubleshooting
 
-### Camera not detected
+### Camera not detected / Synthetic Fallback
 
-```
-RuntimeError: Cannot open video source '0'
-```
+If no physical camera is detected, the application automatically falls back to an animated synthetic test feed with moving colored targets. This enables full UI testing, threshold tuning, and pipeline evaluation on headless or camera-less machines without crashes.
 
-- Try `--source 1`, `--source 2`, etc. to enumerate available cameras.
-- On Linux, ensure you have read permission: `sudo chmod a+rw /dev/video0`
-- On Windows, disable privacy restrictions in *Settings → Privacy → Camera*.
+To connect a physical camera:
+- Try `--source 1`, `--source 2`, etc. to select alternative camera indices.
+- On Linux, ensure camera permissions: `sudo chmod a+rw /dev/video0`
+- On Windows, ensure camera access is allowed under *Settings → Privacy & Security → Camera*.
 
 ### CustomTkinter not installed
 
@@ -554,4 +553,4 @@ MIT License.  See `LICENSE` for details.
 
 ---
 
-*Developed for the Image and Video Processing (IVP) course at MPSTME, SVKM's NMIMS.*
+*Maintained by open-source contributors. Released under the MIT License.*
