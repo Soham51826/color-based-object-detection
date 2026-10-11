@@ -1,0 +1,9 @@
+{
+  "include": [
+    ".",
+    "color_object_detection"
+  ],
+  "extraPaths": [
+    "color_object_detection"
+  ]
+}
