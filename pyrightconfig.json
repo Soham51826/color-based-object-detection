@@ -1,14 +1,13 @@
 {
   "include": [
+    ".",
     "color_object_detection"
   ],
   "extraPaths": [
+    ".",
     "color_object_detection",
-    "color_object_detection/src",
-    "C:/Users/sahil/AppData/Local/Programs/Python/Python36/lib/site-packages",
-    ".venv/Lib/site-packages"
+    "color_object_detection/src"
   ],
-  "pythonPath": ".venv/Scripts/python.exe",
   "venvPath": ".",
   "venv": ".venv",
   "reportMissingImports": "none",

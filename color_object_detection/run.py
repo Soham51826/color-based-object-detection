@@ -6,6 +6,7 @@ Unified entry point for the Color-Based Object Detection System.
 Run this script directly:
     python run.py                   # Launch the Desktop GUI application
     python run.py --source 1        # Launch GUI with specific camera index
+    python run.py --source assets/color_test_benchmark.mp4 # Launch GUI with benchmark video
     python run.py --cli             # Run live tracking in OpenCV window
     python run.py --demo            # Run 10-stage pipeline walkthrough
     python run.py --benchmark       # Run the quantitative benchmark suite
@@ -18,23 +19,48 @@ from pathlib import Path
 
 # Auto-switch to local .venv if dependencies (e.g. cv2) are not in the active Python interpreter
 ROOT_DIR = Path(__file__).resolve().parent
-_VENV_PY = ROOT_DIR / ".venv" / "Scripts" / "python.exe"
-if not _VENV_PY.exists():
-    _VENV_PY = ROOT_DIR.parent / ".venv" / "Scripts" / "python.exe"
+_CANDIDATE_VENVS = [
+    ROOT_DIR / ".venv" / "Scripts" / "python.exe",
+    ROOT_DIR / ".venv" / "bin" / "python",
+    ROOT_DIR.parent / ".venv" / "Scripts" / "python.exe",
+    ROOT_DIR.parent / ".venv" / "bin" / "python",
+]
+_VENV_PY = next((p for p in _CANDIDATE_VENVS if p.exists()), None)
 
-if _VENV_PY.exists() and Path(sys.executable).resolve() != _VENV_PY.resolve():
+if _VENV_PY and Path(sys.executable).resolve() != _VENV_PY.resolve():
     try:
         import cv2  # noqa: F401
     except ImportError:
         import subprocess
         sys.exit(subprocess.call([str(_VENV_PY), *sys.argv]))
 
-# Add package directory to sys.path so src and benchmarks can be imported from root
+# Add package directory and root directory to sys.path so modules resolve cleanly from anywhere
 PACKAGE_DIR = ROOT_DIR / "color_object_detection"
 if not PACKAGE_DIR.exists():
     PACKAGE_DIR = ROOT_DIR
 if str(PACKAGE_DIR) not in sys.path:
     sys.path.insert(0, str(PACKAGE_DIR))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+
+def _resolve_and_prepare_source(source):
+    """Normalize video source and auto-generate the benchmark video if missing."""
+    if source is None:
+        return None
+    try:
+        return int(source)
+    except ValueError:
+        src_path = Path(source)
+        if not src_path.exists() and src_path.name == "color_test_benchmark.mp4":
+            print(f"\n[run.py] Benchmark video not found at '{source}'. Synthesizing automatically...")
+            try:
+                from color_object_detection.benchmarks.generate_video import generate_benchmark_video
+            except ImportError:
+                from benchmarks.generate_video import generate_benchmark_video  # type: ignore
+            generate_benchmark_video(output_path=src_path, show_progress=True)
+            print("[run.py] Benchmark video generated successfully!\n")
+        return str(src_path)
 
 
 def main():
@@ -143,12 +169,7 @@ def main():
             from src.tracker import ColorTracker, open_capture  # type: ignore
             from src import config  # type: ignore
 
-        source = args.source
-        if source is not None:
-            try:
-                source = int(source)
-            except ValueError:
-                pass
+        source = _resolve_and_prepare_source(args.source)
 
         color_names = args.colors
         if color_names:
@@ -184,12 +205,7 @@ def main():
     except ImportError:
         from src.gui_app import ColorDetectionApp  # type: ignore
 
-    source = args.source
-    if source is not None:
-        try:
-            source = int(source)
-        except ValueError:
-            pass
+    source = _resolve_and_prepare_source(args.source)
 
     app = ColorDetectionApp(source=source)
     app.run()

@@ -5,6 +5,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.dylib
+*.dll
 
 # ===========================================================================
 # Virtual Environments
@@ -17,7 +19,7 @@ env.bak/
 venv.bak/
 
 # ===========================================================================
-# Unit Test & Coverage Caches
+# Unit Test, Linter & Coverage Caches
 # ===========================================================================
 .pytest_cache/
 .coverage
@@ -27,6 +29,10 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # ===========================================================================
 # Packaging & Build Distribution
@@ -51,14 +57,17 @@ wheels/
 # Secrets, Credentials & Local Config
 # ===========================================================================
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 *.pem
 *.key
 *.cert
 *.crt
 credentials.json
 client_secrets.json
+id_rsa
+id_ed25519
 
 # ===========================================================================
 # Operating System Artifacts
@@ -86,14 +95,27 @@ desktop.ini
 # ===========================================================================
 # Captured User Data, Recordings & Camera Dumps
 # ===========================================================================
-snapshots/
+snapshots/*
+!snapshots/.gitkeep
+color_object_detection/snapshots/*
+!color_object_detection/snapshots/.gitkeep
 captured_frames/
 snapshot_*.png
+
+# Video recordings (ignore camera dumps and temporary test videos)
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.webm
+
+# Preserve bundled benchmark test assets
+!assets/
+!assets/.gitkeep
+!assets/color_test_benchmark.mp4
+!color_object_detection/assets/
+!color_object_detection/assets/.gitkeep
+!color_object_detection/assets/color_test_benchmark.mp4
 
 # ===========================================================================
 # Local Scratch & Temporary Files
