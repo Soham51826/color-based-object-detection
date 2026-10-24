@@ -301,7 +301,7 @@ def draw_rotated_bounding_box(frame, contour, color_bgr, thickness=None,
 
     rect = cv2.minAreaRect(contour)
     box = cv2.boxPoints(rect)
-    box_int = np.intp(box)
+    box_int = np.asarray(box, dtype=np.int32)
 
     # 1. Draw the anti-aliased rotated rectangle
     cv2.drawContours(frame, [box_int], 0, color_bgr, thickness, lineType=cv2.LINE_AA)

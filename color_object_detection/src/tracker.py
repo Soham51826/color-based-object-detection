@@ -1108,7 +1108,9 @@ def open_capture(
 
     # Determine if this is a video file rather than a live camera
     is_video_file = False
-    if isinstance(source, (str, Path)):
+    if isinstance(source, Path):
+        is_video_file = True
+    elif isinstance(source, str):
         try:
             int(source)
         except ValueError:
