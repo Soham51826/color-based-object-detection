@@ -246,3 +246,32 @@ BENCHMARK_FRAMES_PER_RESOLUTION = 200
 BENCHMARK_LUX_LEVELS = [50, 200, 400, 800, 1200, 1600]
 
 IOU_TP_THRESHOLD = 0.5
+
+# ---------------------------------------------------------------------------
+# Kalman Filter & Speed Estimation settings
+# ---------------------------------------------------------------------------
+
+#: Process noise covariance parameter for 4-state Kalman Filter (position + velocity)
+KALMAN_PROCESS_NOISE = float(os.getenv("KALMAN_PROCESS_NOISE", "1e-2"))
+
+#: Measurement noise covariance parameter for Kalman Filter
+KALMAN_MEASUREMENT_NOISE = float(os.getenv("KALMAN_MEASUREMENT_NOISE", "1e-1"))
+
+#: EMA smoothing factor for instantaneous speed calculation (0 < alpha <= 1)
+SPEED_SMOOTHING_ALPHA = 0.6
+
+#: Minimum speed in px/s to display velocity arrow and movement badge
+SPEED_MIN_DISPLAY_THRESH = 3.0
+
+#: Maximum number of missed frames to sustain trajectory before reset
+MAX_MISSED_TRACK_FRAMES = 8
+
+# ---------------------------------------------------------------------------
+# Iriun Webcam & Live Streaming settings
+# ---------------------------------------------------------------------------
+
+#: Candidate camera indices searched when attempting auto-detection of Iriun Webcam
+IRIUN_SEARCH_INDICES = [1, 2, 3, 4, 0]
+
+#: Keywords searched in Windows PnP camera device names to identify Iriun / phone webcams
+IRIUN_DEVICE_KEYWORDS = ["iriun", "phone", "droidcam", "android", "epoccam", "ivcam"]

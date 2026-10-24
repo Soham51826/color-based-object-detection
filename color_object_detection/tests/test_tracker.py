@@ -15,6 +15,7 @@ They work entirely with synthetic NumPy arrays.
 
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 import cv2  # type: ignore
@@ -31,15 +32,21 @@ from src.tracker import (
     FrameResult,
     SyntheticCapture,
     LoopingVideoCapture,
+    KalmanFilterTracker,
     _ColorState,
     open_capture,
+    find_iriun_camera_index,
+    list_available_cameras,
 )
 from src.utils import (
     FPSCounter,
     StageTimer,
     compute_centroid,
+    compute_contour_angle,
     compute_solidity,
     compute_circularity,
+    draw_rotated_bounding_box,
+    draw_motion_trail,
 )
 
 
@@ -799,5 +806,141 @@ class TestLoopingVideoCapture(object):
 
         cap.release()
         assert cap.isOpened() is False
+
+
+# ---------------------------------------------------------------------------
+# Trajectory Speed & Motion Trail
+# ---------------------------------------------------------------------------
+
+class TestSpeedAndTrajectoryTrail(object):
+    """Verify velocity, speed estimation, and trajectory rendering."""
+
+    def test_speed_calculation_positive_on_motion(self):
+        state = _ColorState()
+        state.update(100, 100, timestamp=10.00)
+        state.update(130, 140, timestamp=10.10)  # moved 50 px in 0.1s => ~500 px/s
+        assert state.speed > 50.0, "Speed should be positive and substantial on motion"
+        assert state.velocity[0] > 0 and state.velocity[1] > 0
+
+    def test_speed_decays_on_missed_frames(self):
+        state = _ColorState()
+        state.update(100, 100, timestamp=10.00)
+        state.update(150, 150, timestamp=10.10)
+        spd1 = state.speed
+        state.on_missed_frame()
+        assert state.speed < spd1, "Speed should decay when target is missed"
+
+    def test_draw_motion_trail_with_speed(self):
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        trail = deque([(100, 100), (120, 120), (140, 140), (160, 160)])
+        draw_motion_trail(frame, trail, (0, 255, 0), speed=120.0, draw_velocity_vector=True)
+        # Should have non-zero pixels drawn for trail, arrow, and speed badge
+        assert np.count_nonzero(frame) > 50
+
+    def test_blob_info_has_speed_and_angle(self):
+        cnt = np.array([[[10, 10]], [[50, 10]], [[50, 80]], [[10, 80]]], dtype=np.int32)
+        blob = BlobInfo(
+            color_name="Red",
+            centroid=(30, 45),
+            area=2800.0,
+            bbox=(10, 10, 40, 70),
+            contour=cnt,
+            speed=45.5,
+            angle=15.2,
+        )
+        assert blob.speed == 45.5
+        assert blob.angle == 15.2
+
+
+# ---------------------------------------------------------------------------
+# Rotated Bounding Box & Angle Accuracy
+# ---------------------------------------------------------------------------
+
+class TestRotatedBoundingBoxAndAngle(object):
+    """Verify orientation angle calculation and rotated bbox visualization."""
+
+    def test_horizontal_rectangle_angle_near_zero(self):
+        # Create a horizontal rectangle (width 200, height 40)
+        mask = np.zeros((300, 400), dtype=np.uint8)
+        cv2.rectangle(mask, (50, 100), (250, 140), 255, -1)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        angle, centroid, dims = compute_contour_angle(contours[0])
+        assert abs(angle) < 5.0, "Horizontal rectangle angle should be close to 0°, got {}".format(angle)
+
+    def test_tilted_rectangle_angle_computed(self):
+        # Create a tilted line/ellipse
+        mask = np.zeros((300, 300), dtype=np.uint8)
+        cv2.ellipse(mask, (150, 150), (60, 20), 45, 0, 360, 255, -1)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        angle, centroid, dims = compute_contour_angle(contours[0])
+        # Expected around 45° (or -45° depending on convention)
+        assert abs(abs(angle) - 45.0) < 5.0, "Angle should be close to 45°, got {}".format(angle)
+
+    def test_draw_rotated_bounding_box_renders_and_returns_angle(self):
+        frame = np.zeros((400, 400, 3), dtype=np.uint8)
+        mask = np.zeros((400, 400), dtype=np.uint8)
+        cv2.ellipse(mask, (200, 200), (80, 30), 30, 0, 360, 255, -1)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        angle = draw_rotated_bounding_box(frame, contours[0], (0, 255, 255), show_angle=True)
+        assert -90.0 <= angle <= 90.0
+        assert np.count_nonzero(frame) > 100
+
+
+# ---------------------------------------------------------------------------
+# Kalman Filter Tracker
+# ---------------------------------------------------------------------------
+
+class TestKalmanFilterTracker(object):
+    """Verify linear Kalman Filter state tracking and reset."""
+
+    def test_kalman_predict_and_correct(self):
+        kf = KalmanFilterTracker()
+        pos, vel = kf.correct(100, 100)
+        assert abs(pos[0] - 100) < 2.0 and abs(pos[1] - 100) < 2.0
+
+        # Feed consecutive measurements moving right
+        for step in range(1, 6):
+            kf.predict(dt=0.1)
+            pos, vel = kf.correct(100 + step * 10, 100)
+
+        assert pos[0] > 130
+        assert kf._is_initialized is True
+
+    def test_kalman_reset(self):
+        kf = KalmanFilterTracker()
+        kf.correct(50, 50)
+        kf.reset()
+        assert kf._is_initialized is False
+
+
+# ---------------------------------------------------------------------------
+# Iriun Webcam & Camera Enumeration
+# ---------------------------------------------------------------------------
+
+class TestIriunWebcamDetection(object):
+    """Verify Iriun camera index auto-detection and open_capture integration."""
+
+    def test_find_iriun_camera_index_returns_int(self):
+        idx = find_iriun_camera_index()
+        assert isinstance(idx, int)
+        assert idx >= 0
+
+    def test_list_available_cameras_structure(self):
+        cams = list_available_cameras(max_probe=2)
+        assert isinstance(cams, list)
+        for cam in cams:
+            assert "index" in cam
+            assert "name" in cam
+            assert "is_iriun" in cam
+
+    def test_open_capture_resolves_iriun_source(self):
+        cap = open_capture(source="iriun", fallback_to_synthetic=True)
+        assert cap is not None
+        assert cap.isOpened() is True
+        ok, frame = cap.read()
+        assert ok is True
+        assert frame is not None
+        cap.release()
 
 

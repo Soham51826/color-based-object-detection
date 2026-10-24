@@ -44,8 +44,15 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def _resolve_and_prepare_source(source):
+def _resolve_and_prepare_source(source, use_iriun=False):
     """Normalize video source and auto-generate the benchmark video if missing."""
+    if use_iriun or (isinstance(source, str) and source.lower() in ("iriun", "phone")):
+        try:
+            from color_object_detection.src.tracker import find_iriun_camera_index
+        except ImportError:
+            from src.tracker import find_iriun_camera_index  # type: ignore
+        idx = find_iriun_camera_index()
+        return idx if idx is not None else 1
     if source is None:
         return None
     try:
@@ -76,7 +83,12 @@ def main():
     parser.add_argument(
         "--source",
         default=None,
-        help="Video source: camera index (e.g. 0, 1) or path to video file.",
+        help="Video source: camera index (e.g. 0, 1), 'iriun', or path to video file.",
+    )
+    parser.add_argument(
+        "--iriun",
+        action="store_true",
+        help="Connect directly to Iriun Webcam (Phone Camera) for live tracking.",
     )
     parser.add_argument(
         "--benchmark",
@@ -169,7 +181,7 @@ def main():
             from src.tracker import ColorTracker, open_capture  # type: ignore
             from src import config  # type: ignore
 
-        source = _resolve_and_prepare_source(args.source)
+        source = _resolve_and_prepare_source(args.source, use_iriun=args.iriun)
 
         color_names = args.colors
         if color_names:
@@ -205,7 +217,7 @@ def main():
     except ImportError:
         from src.gui_app import ColorDetectionApp  # type: ignore
 
-    source = _resolve_and_prepare_source(args.source)
+    source = _resolve_and_prepare_source(args.source, use_iriun=args.iriun)
 
     app = ColorDetectionApp(source=source)
     app.run()

@@ -230,10 +230,14 @@ class ColorDetectionApp(object):
         initial_source_text = "Source: Live Webcam"
         if isinstance(self._source, (str, Path)):
             initial_source_text = "Source: {} (Looping)".format(Path(str(self._source)).name)
+        elif self._source == 1 or "iriun" in str(self._source).lower():
+            initial_source_text = "Source: Iriun Webcam (Phone)"
         self._source_label_var = tk.StringVar(value=initial_source_text)
         self._fps_label_var    = tk.StringVar(value="FPS: --")
         self._status_label_var = tk.StringVar(value="Status: IDLE")
         self._centroid_var     = tk.StringVar(value="Centroid: --, --")
+        self._speed_var        = tk.StringVar(value="Speed: 0.0 px/s")
+        self._angle_var        = tk.StringVar(value="Angle: --")
         self._area_var         = tk.StringVar(value="Area: --")
         self._solidity_var     = tk.StringVar(value="Solidity: --")
         self._circ_var         = tk.StringVar(value="Circularity: --")
@@ -321,8 +325,8 @@ class ColorDetectionApp(object):
         dash_frame.pack(side="left", fill="y", padx=(0, PAD), pady=PAD)
 
         for var in [self._source_label_var, self._fps_label_var, self._status_label_var,
-                    self._centroid_var, self._area_var,
-                    self._solidity_var, self._circ_var]:
+                    self._centroid_var, self._speed_var, self._angle_var,
+                    self._area_var, self._solidity_var, self._circ_var]:
             lbl = self._make_label(dash_frame, textvariable=var)
             lbl.pack(anchor="w", padx=6, pady=2)
 
@@ -412,6 +416,7 @@ class ColorDetectionApp(object):
 
         btn_defs = [
             ("📹 Live Webcam",       "#2e7d32", self._on_live_webcam),
+            ("📱 Iriun Webcam",       "#00796b", self._on_iriun_webcam),
             ("📂 Load Video (.mp4)", "#00838f", self._on_load_video),
             ("⏸ Pause / Resume",     "#1565c0", self._on_pause),
             ("↺ Reset Calibration",   "#6a1b9a", self._on_reset),
@@ -422,15 +427,15 @@ class ColorDetectionApp(object):
                 btn = ctk.CTkButton(
                     btn_frame, text=text, command=cmd,
                     fg_color=color, hover_color=color,
-                    width=150, corner_radius=8,
+                    width=135, corner_radius=8,
                 )
             else:
                 btn = tk.Button(
                     btn_frame, text=text, command=cmd,
                     bg=color, fg="white", relief="flat",
-                    padx=10, pady=6,
+                    padx=8, pady=6,
                 )
-            btn.pack(side="left", padx=5)
+            btn.pack(side="left", padx=4)
 
     # ------------------------------------------------------------------
     # Widget factory helpers
@@ -534,7 +539,7 @@ class ColorDetectionApp(object):
     # Event handlers
     # ------------------------------------------------------------------
 
-    def _switch_source(self, new_source, is_video=False):
+    def _switch_source(self, new_source, is_video=False, is_iriun=False):
         """Safely stop existing capture worker, switch source, and start worker."""
         if self._worker is not None and self._worker.is_alive():
             self._stop_event.set()
@@ -553,8 +558,10 @@ class ColorDetectionApp(object):
         if is_video:
             filename = Path(str(new_source)).name
             self._source_label_var.set("Source: {} (Looping)".format(filename))
+        elif is_iriun or (isinstance(new_source, str) and "iriun" in new_source.lower()) or new_source == 1:
+            self._source_label_var.set("Source: Iriun Webcam (Cam #{})".format(new_source))
         else:
-            self._source_label_var.set("Source: Live Webcam")
+            self._source_label_var.set("Source: Live Webcam (Cam #{})".format(new_source))
 
         self._tracker.reset()
 
@@ -571,11 +578,53 @@ class ColorDetectionApp(object):
         if not was_running:
             self._root.after(_POLL_MS, self._poll_frame)
 
-        logger.info("Source switched to: %s (is_video=%s)", new_source, is_video)
+        logger.info("Source switched to: %s (is_video=%s, is_iriun=%s)", new_source, is_video, is_iriun)
 
     def _on_live_webcam(self):
-        """Switch video source to the live webcam."""
-        self._switch_source(config.DEFAULT_CAMERA_INDEX, is_video=False)
+        """Switch video source to the built-in / default live webcam."""
+        self._switch_source(config.DEFAULT_CAMERA_INDEX, is_video=False, is_iriun=False)
+
+    def _on_iriun_webcam(self):
+        """Connect to phone camera stream via Iriun Webcam with auto-detection."""
+        from .tracker import find_iriun_camera_index
+        iriun_idx = find_iriun_camera_index()
+        target_idx = iriun_idx if iriun_idx is not None else 1
+
+        test_cap = None
+        ok = False
+        frame = None
+        try:
+            test_cap = cv2.VideoCapture(target_idx, cv2.CAP_DSHOW) if os.name == "nt" else cv2.VideoCapture(target_idx)
+            if test_cap.isOpened():
+                ok, frame = test_cap.read()
+        except Exception:
+            pass
+        finally:
+            if test_cap is not None:
+                try:
+                    test_cap.release()
+                except Exception:
+                    pass
+
+        if ok and frame is not None:
+            self._switch_source(target_idx, is_video=False, is_iriun=True)
+            msgbox.showinfo(
+                "Iriun Webcam Connected",
+                "Connected to Iriun Webcam (Phone Camera) on camera index {}!\n\n"
+                "Live tracking and lighting stabilization are now active.".format(target_idx),
+            )
+        else:
+            resp = msgbox.askyesno(
+                "Iriun Webcam Detection",
+                "Iriun Webcam stream was not detected on camera index {}.\n\n"
+                "Setup Steps:\n"
+                "1. Open the Iriun Webcam app on your phone.\n"
+                "2. Ensure your phone and laptop are on the same Wi-Fi or connected via USB.\n"
+                "3. Ensure the Iriun PC app is running.\n\n"
+                "Would you like to force-connect to Camera Index {} anyway?".format(target_idx, target_idx),
+            )
+            if resp:
+                self._switch_source(target_idx, is_video=False, is_iriun=True)
 
     def _on_load_video(self):
         """Prompt user for a video file (defaulting to benchmark video) and loop playback."""
@@ -767,12 +816,19 @@ class ColorDetectionApp(object):
             self._status_label_var.set("Status: TRACKING")
             cx, cy = blob.centroid if blob.centroid else (0, 0)
             self._centroid_var.set("Centroid: ({}, {})".format(cx, cy))
+            self._speed_var.set("Speed: {:.1f} px/s".format(blob.speed))
+            if self._var_rotbbox.get():
+                self._angle_var.set("Angle: {:+.1f}° ({}x{})".format(blob.angle, blob.dimensions[0], blob.dimensions[1]))
+            else:
+                self._angle_var.set("Angle: {:+.1f}°".format(blob.angle))
             self._area_var.set("Area: {} px^2".format(int(blob.area)))
             self._solidity_var.set("Solidity: {:.2f}".format(blob.solidity))
             self._circ_var.set("Circularity: {:.2f}".format(blob.circularity))
         else:
             self._status_label_var.set("Status: LOST")
             self._centroid_var.set("Centroid: --, --")
+            self._speed_var.set("Speed: 0.0 px/s")
+            self._angle_var.set("Angle: --")
             self._area_var.set("Area: --")
             self._solidity_var.set("Solidity: --")
             self._circ_var.set("Circularity: --")
