@@ -1,0 +1,250 @@
+================================================================================
+ COLOR-BASED OBJECT DETECTION AND REAL-TIME TRACKING SYSTEM
+ MASTER RUN COMMANDS CHEATSHEET
+================================================================================
+
+This document contains all terminal and command-line execution commands for the
+Color-Based Object Detection project. All commands should be run from the root
+directory of the repository.
+
+
+--------------------------------------------------------------------------------
+1. ENVIRONMENT SETUP & ACTIVATION
+--------------------------------------------------------------------------------
+
+Before running any script, make sure your virtual environment is active:
+
+- Windows (PowerShell):
+    .venv\Scripts\Activate.ps1
+
+- Windows (Command Prompt / CMD):
+    .venv\Scripts\activate.bat
+
+- Linux / macOS:
+    source .venv/bin/activate
+
+- Install or update dependencies:
+    pip install -r requirements.txt
+
+- (Optional) Install package in editable development mode:
+    pip install -e color_object_detection
+
+
+--------------------------------------------------------------------------------
+2. PRIMARY LAUNCHER: UNIFIED run.py COMMANDS
+--------------------------------------------------------------------------------
+
+The primary, unified entry point for all operations is run.py:
+
+[A] DESKTOP GUI APPLICATION (RECOMMENDED)
+-----------------------------------------
+• Launch Desktop GUI with default webcam (or auto synthetic fallback if no camera):
+    python run.py
+
+• Launch GUI with a specific camera index (e.g. external USB webcam index 1):
+    python run.py --source 1
+
+• Launch GUI with Iriun Webcam (Phone Camera):
+    python run.py --iriun
+    OR
+    python run.py --source iriun
+
+• Launch GUI looping a pre-recorded video file (e.g., benchmark video):
+    python run.py --source assets/color_test_benchmark.mp4
+
+• Explicit GUI flag:
+    python run.py --gui
+
+
+[B] LIGHTWEIGHT CLI MODE (OPENCV WINDOW)
+----------------------------------------
+• Run tracking in a lightweight OpenCV window (press 'q' or Esc to quit):
+    python run.py --cli
+
+• Run CLI tracking on specific camera index:
+    python run.py --cli --source 1
+
+• Run CLI tracking connected to Iriun Webcam:
+    python run.py --cli --iriun
+
+• Run CLI tracking on a video file:
+    python run.py --cli --source assets/color_test_benchmark.mp4
+
+• Track only specific color(s) (available: Red, Orange, Yellow, Green, Cyan, Blue, Purple, Pink, White):
+    python run.py --cli --colors Red
+    python run.py --cli --colors Red Blue
+    python run.py --cli --colors Green Yellow Pink
+
+
+[C] COMPUTER VISION ANALYTICS & ADVANCED FEATURES
+-------------------------------------------------
+• Enable Directional Virtual Tripwire (counts IN vs OUT line crossings):
+    python run.py --tripwire
+    python run.py --cli --tripwire
+
+• Enable Monitored ROI Zone (real-time occupant count & dwell time):
+    python run.py --roi-zone
+    python run.py --cli --roi-zone
+
+• Record live video session to an MP4 file in snapshots/:
+    python run.py --record
+    python run.py --cli --record
+
+• Log kinematics telemetry (x, y, speed, distance) to CSV/JSON in snapshots/:
+    python run.py --log-telemetry
+    python run.py --cli --log-telemetry
+
+• Enable Gray World color constancy (illuminant normalization):
+    python run.py --color-constancy
+    python run.py --cli --color-constancy
+
+• Full analytics combo (Tripwire + ROI Zone + Recording + Telemetry + Video):
+    python run.py --tripwire --roi-zone --record --log-telemetry --source assets/color_test_benchmark.mp4
+
+
+[D] EDUCATIONAL PIPELINE DEMO & GRAPHIC GENERATION
+--------------------------------------------------
+• Run the 10-stage computer vision pipeline walkthrough:
+  (Prints mathematical explanations and generates benchmark_results/pipeline_demonstration.png)
+    python run.py --demo
+
+
+[E] SYNTHETIC BENCHMARK VIDEO GENERATION
+----------------------------------------
+• Generate 10-second, 60 FPS multi-target synthetic benchmark video with highlights, shadows & noise:
+  (Saved to assets/color_test_benchmark.mp4)
+    python run.py --generate-video
+
+
+[F] AUTOMATED UNIT TESTING SUITE
+--------------------------------
+• Run all automated unit tests via run.py:
+    python run.py --test
+
+• Pass extra pytest flags through run.py (e.g. quiet mode, fail-fast, specific test name):
+    python run.py --test -q
+    python run.py --test -x
+    python run.py --test -k "test_bounds"
+
+
+[G] QUANTITATIVE BENCHMARK & PERFORMANCE SUITE
+----------------------------------------------
+• Run full benchmark suite (evaluates FPS, latency, IoU, Precision, Recall across resolutions):
+    python run.py --benchmark
+
+• Run benchmark suite with custom number of frames per resolution:
+    python run.py --benchmark --frames 500
+
+• Run benchmark suite with custom output directory:
+    python run.py --benchmark --out benchmark_results/
+
+
+--------------------------------------------------------------------------------
+3. DIRECT MODULE EXECUTION COMMANDS (ALTERNATIVE INVOCATIONS)
+--------------------------------------------------------------------------------
+
+You can also invoke modules directly using Python's -m syntax or direct paths:
+
+[A] PYTEST TEST SUITE DIRECT INVOCATION
+• Run all 229 automated unit tests with verbose output:
+    pytest color_object_detection/tests -v
+
+• Run tests from root using pytest.ini defaults:
+    pytest -v
+
+• Run specific test files:
+    pytest color_object_detection/tests/test_bounds.py -v
+    pytest color_object_detection/tests/test_tracker.py -v
+    pytest color_object_detection/tests/test_new_features.py -v
+
+• Run with coverage (if pytest-cov is installed):
+    pytest --cov=color_object_detection
+
+
+[B] DIRECT BENCHMARK SCRIPTS
+• Run benchmark video generator directly:
+    python benchmarks/generate_video.py
+    python benchmarks/generate_video.py --duration 15.0 --fps 60 --out assets/color_test_benchmark.mp4
+
+• Run benchmark evaluation harness directly:
+    python -m color_object_detection.benchmarks.evaluate
+    python -m color_object_detection.benchmarks.evaluate --frames 300 --out benchmark_results/
+
+
+[C] DIRECT GUI AND PIPELINE DEMO
+• Run GUI module directly:
+    python -m color_object_detection.src.gui_app
+    python -m color_object_detection.src.gui_app --source 0
+
+• Run pipeline demo directly:
+    python -m color_object_detection.src.pipeline_demo
+
+
+--------------------------------------------------------------------------------
+4. COMPLETE CLI ARGUMENTS CHEATSHEET (run.py)
+--------------------------------------------------------------------------------
+
+Argument              Description
+--------------------  ----------------------------------------------------------
+--gui                 Launch Desktop GUI app (default mode)
+--cli                 Launch lightweight OpenCV window tracker instead of GUI
+--source <SOURCE>     Video source: camera index (0, 1), 'iriun', or video file path
+--iriun               Connect directly to Iriun Webcam (Phone Camera)
+--colors <C1> <C2>..  Filter tracking to specific color name(s) (e.g. --colors Red Blue)
+--tripwire            Enable directional virtual tripwire crossing counter
+--roi-zone            Enable monitored ROI zone occupancy & dwell-time analytics
+--record              Record live tracking video to timestamped MP4 in snapshots/
+--log-telemetry       Export kinematics telemetry (x, y, speed, distance) to CSV
+--color-constancy     Enable Gray World color constancy illumination normalization
+--demo                Run educational 10-stage walkthrough and generate demo graphic
+--generate-video      Generate synthetic 60 FPS multi-target MP4 benchmark video
+--benchmark           Run quantitative throughput (FPS) & accuracy benchmark suite
+--frames <N>          Number of frames per resolution in benchmark mode
+--out <DIR>           Output directory for benchmark plots/results
+--test                Run automated pytest test suite
+
+
+--------------------------------------------------------------------------------
+5. IN-SESSION KEYBOARD CONTROLS & SHORTCUTS
+--------------------------------------------------------------------------------
+
+CLI Mode (OpenCV Window):
+• 'q' or Esc : Quit the application and release camera/recording resources
+• 's'        : Take an instant snapshot and save PNG to snapshots/
+
+Desktop GUI Controls:
+• Left Mouse Click on Camera Feed : Eyedropper calibration tool (samples 5x5 pixels
+                                   and auto-adjusts HSV tolerance sliders)
+• Preset Dropdown                 : Select from 9 calibrated colors or Multi-Color
+• Feature Checkboxes              : Multi-Object IDs, Pinhole Distance & Speed,
+                                   Gray World, Tripwires, ROI Zone, CLAHE, EMA,
+                                   Rotated Bounding Box, Trajectory Trails
+• Action Buttons                  : [Start], [Pause], [Reset Calibration],
+                                   [Snapshot], [Record Video], [Log Telemetry]
+
+
+--------------------------------------------------------------------------------
+6. QUICK REFERENCE / COPY-PASTE EXAMPLES
+--------------------------------------------------------------------------------
+
+# 1. Standard GUI launch:
+python run.py
+
+# 2. Benchmark video in GUI:
+python run.py --source assets/color_test_benchmark.mp4
+
+# 3. CLI tracking Red and Blue only:
+python run.py --cli --colors Red Blue
+
+# 4. CLI with virtual tripwire counter:
+python run.py --cli --tripwire
+
+# 5. Run all 229 unit tests:
+python run.py --test
+
+# 6. Generate new benchmark video:
+python run.py --generate-video
+
+# 7. Run performance benchmark:
+python run.py --benchmark
+================================================================================
