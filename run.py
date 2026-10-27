@@ -159,8 +159,20 @@ def main():
         default=None,
         help="Output directory for benchmark plots (when --benchmark is set).",
     )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Generate the formal NMIMS MPSTME project report in DOCX and Markdown formats.",
+    )
 
     args, unknown = parser.parse_known_args()
+
+    if args.report:
+        import generate_formal_project_report
+        generate_formal_project_report.generate_report()
+        generate_formal_project_report.generate_markdown_report()
+        return
+
 
     if args.test:
         import pytest

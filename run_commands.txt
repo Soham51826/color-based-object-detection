@@ -247,4 +247,10 @@ python run.py --generate-video
 
 # 7. Run performance benchmark:
 python run.py --benchmark
+
+# 8. Generate formal NMIMS MPSTME project reports (.docx and .md):
+python run.py --report
+
+# 9. Launch Web Dashboard server:
+python web_app/app.py
 ================================================================================
