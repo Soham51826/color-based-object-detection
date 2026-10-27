@@ -3,7 +3,7 @@ run.py
 ======
 Unified entry point for the Color-Based Object Detection System.
 
-Run this script directly:
+Run this script directly from the repository root:
     python run.py                   # Launch the Desktop GUI application
     python run.py --source 1        # Launch GUI with specific camera index
     python run.py --source assets/color_test_benchmark.mp4 # Launch GUI with benchmark video
@@ -123,6 +123,41 @@ def main():
         help="Generate synthetic multi-target benchmark video (assets/color_test_benchmark.mp4).",
     )
     parser.add_argument(
+        "--canvas",
+        action="store_true",
+        help="Launch directly in Virtual Air Canvas touchless drawing mode.",
+    )
+    parser.add_argument(
+        "--tripwire",
+        action="store_true",
+        help="Enable directional virtual tripwire crossing counter.",
+    )
+    parser.add_argument(
+        "--roi-zone",
+        action="store_true",
+        help="Enable monitored ROI zone occupancy and dwell-time analytics.",
+    )
+    parser.add_argument(
+        "--heatmap",
+        action="store_true",
+        help="Enable 2D motion trajectory density heatmap.",
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Automatically record live session video to an MP4 file.",
+    )
+    parser.add_argument(
+        "--log-telemetry",
+        action="store_true",
+        help="Log kinematics telemetry to CSV and JSON files.",
+    )
+    parser.add_argument(
+        "--color-constancy",
+        action="store_true",
+        help="Enable Gray World color constancy illumination normalization.",
+    )
+    parser.add_argument(
         "--frames",
         type=int,
         default=None,
@@ -171,12 +206,15 @@ def main():
         run_full_benchmark(out_dir=out_dir, frames_per_res=frames)
         return
 
-    if args.cli:
+    # CLI mode (or when specified with interactive feature flags without --gui)
+    if args.cli or args.tripwire or args.record:
         try:
+            import datetime
             import cv2
             from color_object_detection.src.tracker import ColorTracker, open_capture
             from color_object_detection.src import config
         except ImportError:
+            import datetime
             import cv2
             from src.tracker import ColorTracker, open_capture  # type: ignore
             from src import config  # type: ignore
@@ -190,7 +228,22 @@ def main():
                     print(f"Unknown colour '{name}'. Available: {list(config.COLOR_PRESETS.keys())}")
                     sys.exit(1)
 
-        tracker = ColorTracker(color_names=color_names)
+        tracker = ColorTracker(
+            color_names=color_names,
+            use_gray_world=args.color_constancy,
+            show_tripwire=args.tripwire,
+            show_roi_zone=args.roi_zone,
+        )
+
+        if args.record:
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            rec_path = config.SNAPSHOT_DIR / f"cli_recording_{ts}.mp4"
+            tracker.recorder.start(rec_path, width=config.CAPTURE_WIDTH, height=config.CAPTURE_HEIGHT, fps=config.RECORDING_FPS)
+            print(f"[Recording] Live video recording started -> {rec_path.name}")
+        if args.log_telemetry:
+            tracker.telemetry.start()
+            print("[Telemetry] Kinematics telemetry logging started.")
+
         cap = open_capture(source, fallback_to_synthetic=True)
         window_name = "Color Detection — press 'q' or Esc to quit"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -205,13 +258,27 @@ def main():
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord('q'), 27):
                     break
+                elif key == ord('s'):  # Snapshot
+                    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    snap_path = config.SNAPSHOT_DIR / f"snapshot_{ts}.png"
+                    cv2.imwrite(str(snap_path), result.annotated_frame)
+                    print(f"[Snapshot] Saved to {snap_path.name}")
         finally:
             cap.release()
             cv2.destroyAllWindows()
+            if tracker.recorder.is_recording:
+                p = tracker.recorder.stop()
+                print(f"[Recording] Saved to {p.name if p else 'video.mp4'}")
+            if tracker.telemetry.is_active:
+                tracker.telemetry.stop()
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                csv_p = config.SNAPSHOT_DIR / f"cli_telemetry_{ts}.csv"
+                tracker.telemetry.export_csv(csv_p)
+                print(f"[Telemetry] Exported {tracker.telemetry.total_rows} frames to {csv_p.name}")
             print("[Color Tracker] Stopped.")
         return
 
-    # Default action: launch GUI application
+    # Default action: launch Desktop GUI application
     try:
         from color_object_detection.src.gui_app import ColorDetectionApp
     except ImportError:

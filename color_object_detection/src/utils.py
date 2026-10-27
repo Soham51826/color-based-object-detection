@@ -536,19 +536,9 @@ def draw_motion_trail(frame, trail, color_bgr, min_alpha=0.3,
                 line_type=cv2.LINE_AA,
             )
 
-    # Draw speed badge near trail head
-    if speed is not None and speed >= 1.0:
-        speed_text = "{:.0f} px/s".format(speed)
-        draw_label(
-            frame,
-            speed_text,
-            head_x + 12,
-            head_y - 12,
-            color_bgr=(0, 255, 255),
-            bg_color_bgr=(20, 20, 35),
-            font_scale=0.45,
-            thickness=1,
-        )
+    # Draw speed badge near trail head only if explicitly requested
+    # (omitted by default to prevent video clutter)
+    pass
 
 
 def annotate_detection(
@@ -610,17 +600,15 @@ def annotate_detection(
 
     draw_crosshair(frame, cx, cy, color_bgr)
 
-    # Build comprehensive label with area, circularity, speed, and angle
-    label_parts = ["{} ({},{}) A={}".format(color_name, cx, cy, int(area))]
-    if speed is not None and speed >= 1.0:
-        label_parts.append("Spd={:.0f}px/s".format(speed))
+    # Clean, intuitive label (Color, (x, y), speed if moving)
+    label_parts = ["{} ({}, {})".format(color_name, cx, cy)]
+    if speed is not None and speed >= 5.0:
+        label_parts.append("{:.0f} px/s".format(speed))
     if use_rotated_bbox and detected_angle is not None:
         label_parts.append("θ={:+.1f}°".format(detected_angle))
-    else:
-        label_parts.append("C={:.2f}".format(circularity))
 
-    label = " ".join(label_parts)
-    draw_label(frame, label, x, y - 8, color_bgr=color_bgr)
+    label = " | ".join(label_parts)
+    draw_label(frame, label, x, max(18, y - 8), color_bgr=color_bgr, bg_color_bgr=(20, 20, 30))
 
     return (cx, cy)
 
@@ -666,3 +654,64 @@ class StageTimer(object):
 
     def __exit__(self, *args):
         self.elapsed_ms = (time.time() - self._start) * 1000.0
+
+
+# ---------------------------------------------------------------------------
+# Illumination Robustness & Color Constancy
+# ---------------------------------------------------------------------------
+
+def apply_gray_world(frame: np.ndarray) -> np.ndarray:
+    """Apply the Gray World color constancy algorithm to eliminate ambient color cast.
+
+    Assumes average scene reflectance is achromatic gray. Computes per-channel scaling
+    factors:
+        M_gray = (mean_B + mean_G + mean_R) / 3
+        k_C = M_gray / mean_C
+    """
+    b, g, r = cv2.split(frame.astype(np.float32))
+    m_b = float(np.mean(b))
+    m_g = float(np.mean(g))
+    m_r = float(np.mean(r))
+
+    if m_b <= 0 or m_g <= 0 or m_r <= 0:
+        return frame
+
+    m_gray = (m_b + m_g + m_r) / 3.0
+    k_b = m_gray / m_b
+    k_g = m_gray / m_g
+    k_r = m_gray / m_r
+
+    b_scaled = np.clip(b * k_b, 0, 255).astype(np.uint8)
+    g_scaled = np.clip(g * k_g, 0, 255).astype(np.uint8)
+    r_scaled = np.clip(r * k_r, 0, 255).astype(np.uint8)
+
+    return cv2.merge([b_scaled, g_scaled, r_scaled])
+
+
+# ---------------------------------------------------------------------------
+# Metric Distance & Velocity Math
+# ---------------------------------------------------------------------------
+
+def estimate_pinhole_distance(
+    w_px: float,
+    real_width_cm: float = 6.5,
+    focal_length_px: float = 700.0,
+) -> float:
+    """Calculate distance in cm using pinhole camera projection: Z = (f * W_real) / w_px."""
+    if w_px <= 1.0:
+        return 100.0
+    dist = (focal_length_px * real_width_cm) / float(w_px)
+    return max(5.0, min(1000.0, round(dist, 1)))
+
+
+def estimate_metric_velocity(
+    speed_px_s: float,
+    distance_cm: float,
+    focal_length_px: float = 700.0,
+) -> float:
+    """Calculate metric velocity in meters per second (m/s)."""
+    if focal_length_px <= 0:
+        return 0.0
+    mps = (float(speed_px_s) * float(distance_cm)) / (focal_length_px * 100.0)
+    return max(0.0, round(mps, 2))
+

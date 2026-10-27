@@ -275,3 +275,32 @@ IRIUN_SEARCH_INDICES = [1, 2, 3, 4, 0]
 
 #: Keywords searched in Windows PnP camera device names to identify Iriun / phone webcams
 IRIUN_DEVICE_KEYWORDS = ["iriun", "phone", "droidcam", "android", "epoccam", "ivcam"]
+
+# ---------------------------------------------------------------------------
+# Metric Distance & Camera Pinhole Model settings
+# ---------------------------------------------------------------------------
+
+#: Estimated camera focal length in pixels (standard for ~60° FOV at 640x480)
+PINHOLE_FOCAL_LENGTH_PX = float(os.getenv("PINHOLE_FOCAL_LENGTH_PX", "700.0"))
+
+#: Assumed real-world physical diameter/width of tracked target in centimeters
+#: (e.g. 6.5cm standard tennis ball, 5.0cm bottle cap/mug)
+REAL_OBJECT_WIDTH_CM = float(os.getenv("REAL_OBJECT_WIDTH_CM", "6.5"))
+
+# ---------------------------------------------------------------------------
+# Illumination Robustness & Color Constancy
+# ---------------------------------------------------------------------------
+
+#: Enable Gray World color constancy algorithm to eliminate warm/cool lighting casts
+USE_GRAY_WORLD = False
+
+# ---------------------------------------------------------------------------
+# Analytics & Recording settings
+# ---------------------------------------------------------------------------
+
+#: Default FPS for live video session recording
+RECORDING_FPS = 30.0
+
+#: Decay factor for 2D trajectory density heatmap
+HEATMAP_DECAY = 0.999
+

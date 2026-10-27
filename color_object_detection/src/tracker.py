@@ -46,6 +46,7 @@ from .utils import (
     compute_contour_angle,
     compute_solidity,
     draw_fps_overlay,
+    draw_label,
     draw_motion_trail,
     get_logger,
 )
@@ -89,8 +90,9 @@ class BlobInfo(object):
 
     def __init__(self, color_name, centroid, area, bbox, contour,
                  raw_centroid=None, solidity=1.0, circularity=1.0,
-                 speed=0.0, angle=0.0, dimensions=None):
-        # type: (str, Optional[Tuple[int,int]], float, Tuple[int,int,int,int], np.ndarray, Optional[Tuple[int,int]], float, float, float, float, Optional[Tuple[int,int]]) -> None
+                 speed=0.0, angle=0.0, dimensions=None,
+                 distance_cm=None, metric_speed_mps=0.0, track_id=None):
+        # type: (str, Optional[Tuple[int,int]], float, Tuple[int,int,int,int], np.ndarray, Optional[Tuple[int,int]], float, float, float, float, Optional[Tuple[int,int]], Optional[float], float, Optional[int]) -> None
         self.color_name   = color_name
         self.centroid     = centroid
         self.raw_centroid = raw_centroid if raw_centroid is not None else centroid
@@ -102,11 +104,21 @@ class BlobInfo(object):
         self.speed        = float(speed)
         self.angle        = float(angle)
         self.dimensions   = dimensions if dimensions is not None else (bbox[2], bbox[3])
+        self.distance_cm  = distance_cm
+        self.metric_speed_mps = float(metric_speed_mps)
+        self.track_id     = track_id
 
     def __repr__(self):
-        return "BlobInfo(color={}, centroid={}, area={:.0f}, speed={:.1f}px/s, angle={:+.1f}°)".format(
-            self.color_name, self.centroid, self.area, self.speed, self.angle
-        )
+        parts = ["color={}".format(self.color_name)]
+        if self.track_id is not None:
+            parts.append("id=#{}".format(self.track_id))
+        parts.append("centroid={}".format(self.centroid))
+        parts.append("area={:.0f}".format(self.area))
+        parts.append("speed={:.1f}px/s".format(self.speed))
+        if self.distance_cm is not None:
+            parts.append("dist={:.0f}cm".format(self.distance_cm))
+        parts.append("angle={:+.1f}°".format(self.angle))
+        return "BlobInfo({})".format(", ".join(parts))
 
 
 class FrameResult(object):
@@ -124,15 +136,23 @@ class FrameResult(object):
         Rolling-average frames-per-second at the time of processing.
     stage_times_ms : dict
         Per-stage wall-clock durations in milliseconds.
+    tracks : list
+        List of TrackedObject instances from MultiObjectTracker.
+    analytics_info : dict
+        Dictionary of analytics metrics (tripwire counts, ROI occupancy, etc.).
     """
 
-    def __init__(self, annotated_frame, masks, blobs, fps, stage_times_ms=None):
-        # type: (np.ndarray, Dict[str, np.ndarray], List[BlobInfo], float, Optional[Dict[str,float]]) -> None
+    def __init__(self, annotated_frame, masks, blobs, fps, stage_times_ms=None,
+                 tracks=None, analytics_info=None):
+        # type: (np.ndarray, Dict[str, np.ndarray], List[BlobInfo], float, Optional[Dict[str,float]], Optional[list], Optional[dict]) -> None
         self.annotated_frame = annotated_frame
         self.masks           = masks
         self.blobs           = blobs
         self.fps             = fps
         self.stage_times_ms  = stage_times_ms if stage_times_ms is not None else {}
+        self.tracks          = tracks if tracks is not None else []
+        self.analytics_info  = analytics_info if analytics_info is not None else {}
+
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +369,14 @@ class ColorTracker(object):
         show_trail=True,
         use_rotated_bbox=False,
         min_solidity=None,
+        use_gray_world=False,
+        use_multitrack=True,
+        show_metric_distance=True,
+        show_tripwire=False,
+        show_roi_zone=False,
+        show_heatmap=False,
+        real_width_cm=None,
+        focal_length_px=None,
     ):
         if color_names is None:
             color_names = list(config.COLOR_PRESETS.keys())
@@ -381,6 +409,30 @@ class ColorTracker(object):
         self.use_ema_smoothing = use_ema_smoothing
         self.show_trail       = show_trail
         self.use_rotated_bbox = use_rotated_bbox
+        self.use_gray_world   = use_gray_world
+        self.use_multitrack   = use_multitrack
+        self.show_metric_distance = show_metric_distance
+
+        # Physical Camera Geometry
+        self.real_width_cm = float(real_width_cm) if real_width_cm is not None else getattr(config, "REAL_OBJECT_WIDTH_CM", 6.5)
+        self.focal_length_px = float(focal_length_px) if focal_length_px is not None else getattr(config, "PINHOLE_FOCAL_LENGTH_PX", 700.0)
+
+        # Advanced Modular Subsystems
+        from .multitracker import MultiObjectTracker
+        from .analytics import Tripwire, ROIZone, TelemetryLogger, VideoRecorder
+
+        self.multitracker = MultiObjectTracker(
+            real_width_cm=self.real_width_cm,
+            focal_length_px=self.focal_length_px,
+        )
+        self.tripwire = Tripwire()
+        self.tripwire.is_enabled = show_tripwire
+
+        self.roi_zone = ROIZone()
+        self.roi_zone.is_enabled = show_roi_zone
+
+        self.telemetry = TelemetryLogger()
+        self.recorder = VideoRecorder()
 
         # Build the elliptical morphological structuring element once
         self._morph_kernel = cv2.getStructuringElement(
@@ -405,7 +457,7 @@ class ColorTracker(object):
 
         logger.info(
             "ColorTracker initialised | colours=%s | min_area=%d px^2 "
-            "| clahe=%s | bilateral=%s | ema=%s | trail=%s | rotated_bbox=%s",
+            "| clahe=%s | bilateral=%s | ema=%s | trail=%s | rotated_bbox=%s | multitrack=%s",
             color_names,
             min_contour_area,
             use_clahe,
@@ -413,6 +465,7 @@ class ColorTracker(object):
             use_ema_smoothing,
             show_trail,
             use_rotated_bbox,
+            use_multitrack,
         )
 
     # ------------------------------------------------------------------
@@ -435,18 +488,25 @@ class ColorTracker(object):
         self._fps_counter.tick()
         stage_times = {}
 
+        # ------ Stage 0: Illumination Pre-filter (Gray World) ---------
+        if self.use_gray_world:
+            from .utils import apply_gray_world
+            base_frame = apply_gray_world(frame)
+        else:
+            base_frame = frame
+
         # ------ Stage 1: Spatial pre-filter ---------------------------
         with StageTimer() as t_gauss:
             if self.use_bilateral:
                 blurred = cv2.bilateralFilter(
-                    frame,
+                    base_frame,
                     d=config.BILATERAL_D,
                     sigmaColor=config.BILATERAL_SIGMA_COLOR,
                     sigmaSpace=config.BILATERAL_SIGMA_SPACE,
                 )
             else:
                 blurred = cv2.GaussianBlur(
-                    frame,
+                    base_frame,
                     self.gaussian_kernel,
                     config.GAUSSIAN_SIGMA,
                 )
@@ -520,15 +580,18 @@ class ColorTracker(object):
                             blob.centroid = blob.raw_centroid
                             blob.speed = 0.0
 
+                    # In single-target tracking mode: annotate ONLY the primary object!
+                    # This prevents cluttering the screen with duplicate boxes and background noise.
+                    if not self.use_multitrack:
                         annotate_detection(
                             annotated,
-                            blob.contour,
+                            primary_blob.contour,
                             name,
                             preset["bgr_display"],
                             use_rotated_bbox=self.use_rotated_bbox,
-                            smoothed_centroid=blob.centroid,
-                            speed=blob.speed,
-                            angle=blob.angle,
+                            smoothed_centroid=primary_blob.centroid,
+                            speed=primary_blob.speed,
+                            angle=primary_blob.angle,
                         )
 
                     # Draw motion trail for this colour with speed indicator
@@ -544,10 +607,79 @@ class ColorTracker(object):
 
         stage_times["contour_moments_ms"] = t_contour.elapsed_ms
 
-        # ------ Stage 10: HUD overlays --------------------------------
+        # ------ Stage 10: Multi-Object Tracking & Association ---------
+        det_dicts = []
+        for b in all_blobs:
+            if b.raw_centroid is not None:
+                det_dicts.append({
+                    "color_name": b.color_name,
+                    "color_bgr": self._presets[b.color_name]["bgr_display"],
+                    "centroid": b.raw_centroid,
+                    "bbox": b.bbox,
+                    "contour": b.contour,
+                    "area": b.area,
+                    "solidity": b.solidity,
+                    "circularity": b.circularity,
+                    "angle": b.angle,
+                })
+
+        active_tracks = self.multitracker.update(det_dicts)
+
+        # Match persistent track IDs back to individual blobs
+        for b in all_blobs:
+            if b.raw_centroid is not None:
+                for trk in active_tracks:
+                    if not trk.is_occluded and trk.color_name == b.color_name:
+                        if math.hypot(trk.raw_centroid[0] - b.raw_centroid[0], trk.raw_centroid[1] - b.raw_centroid[1]) < 15.0:
+                            b.track_id = trk.track_id
+                            b.distance_cm = trk.distance_cm
+                            b.metric_speed_mps = trk.metric_speed_mps
+                            break
+
+        if self.use_multitrack and active_tracks:
+            from .multitracker import render_multitrack_overlays
+            render_multitrack_overlays(
+                annotated,
+                active_tracks,
+                show_prediction=False,
+                show_metric_distance=self.show_metric_distance,
+            )
+
+        # ------ Stage 11: Computer Vision Analytics Suite -------------
+        if self.tripwire.is_enabled:
+            self.tripwire.update(active_tracks)
+            self.tripwire.render(annotated)
+
+        if self.roi_zone.is_enabled:
+            self.roi_zone.update(active_tracks)
+            self.roi_zone.render(annotated)
+
+        if self.telemetry.is_active:
+            self.telemetry.log_frame(active_tracks)
+
+        # ------ Stage 12: HUD overlays & Video Recording --------------
         fps = self._fps_counter.fps
         draw_fps_overlay(annotated, fps)
-        self._draw_status_hud(annotated, all_blobs)
+
+        if self.recorder.is_recording:
+            rec_dur = self.recorder.duration_sec
+            rec_mins = int(rec_dur // 60)
+            rec_secs = int(rec_dur % 60)
+            rec_text = f"REC {rec_mins:02d}:{rec_secs:02d}"
+            h_f, w_f = annotated.shape[:2]
+            if int(rec_dur * 2) % 2 == 0:
+                cv2.circle(annotated, (w_f - 110, 30), 6, (0, 0, 255), -1, lineType=cv2.LINE_AA)
+            draw_label(annotated, rec_text, w_f - 95, 36, color_bgr=(0, 0, 255), bg_color_bgr=(20, 20, 30), font_scale=0.5, thickness=2)
+            self.recorder.write_frame(annotated)
+
+        analytics_info = {
+            "tripwire_in": self.tripwire.count_in,
+            "tripwire_out": self.tripwire.count_out,
+            "roi_occupants": self.roi_zone.occupants,
+            "telemetry_rows": self.telemetry.total_rows,
+            "is_recording": self.recorder.is_recording,
+            "record_duration": self.recorder.duration_sec,
+        }
 
         return FrameResult(
             annotated_frame=annotated,
@@ -555,7 +687,24 @@ class ColorTracker(object):
             blobs=all_blobs,
             fps=fps,
             stage_times_ms=stage_times,
+            tracks=active_tracks,
+            analytics_info=analytics_info,
         )
+
+    def set_active_colors(self, color_names):
+        # type: (List[str]) -> None
+        """Dynamically update active color targets to track."""
+        for name in color_names:
+            if name not in config.COLOR_PRESETS:
+                raise ValueError("Unknown colour '{}'. Available: {}".format(
+                    name, list(config.COLOR_PRESETS.keys())
+                ))
+            if name not in self._presets:
+                self._presets[name] = dict(config.COLOR_PRESETS[name])
+            if name not in self._color_states:
+                self._color_states[name] = _ColorState()
+        self.color_names = list(color_names)
+        self.multitracker.reset()
 
     def update_hsv_range(self, color_name, lower1, upper1, lower2=None, upper2=None):
         # type: (str, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]) -> None
@@ -586,11 +735,14 @@ class ColorTracker(object):
         )
 
     def reset(self):
-        """Reset per-colour HSV bounds to factory defaults, clear FPS and EMA."""
+        """Reset per-colour HSV bounds to factory defaults, clear FPS, tracks, and analytics."""
         for name in self.color_names:
             self._presets[name] = dict(config.COLOR_PRESETS[name])
             self._color_states[name].reset()
         self._fps_counter.reset()
+        self.multitracker.reset()
+        self.tripwire.reset_counts()
+        self.roi_zone.reset()
         logger.info("ColorTracker reset to factory defaults.")
 
     # ------------------------------------------------------------------
@@ -662,6 +814,9 @@ class ColorTracker(object):
             x, y, w, h = cv2.boundingRect(cnt)
             angle, _, dimensions = compute_contour_angle(cnt)
 
+            from .utils import estimate_pinhole_distance
+            dist_cm = estimate_pinhole_distance(max(w, h), self.real_width_cm, self.focal_length_px)
+
             blobs.append(
                 BlobInfo(
                     color_name=color_name,
@@ -675,6 +830,8 @@ class ColorTracker(object):
                     speed=0.0,
                     angle=angle,
                     dimensions=dimensions,
+                    distance_cm=dist_cm,
+                    metric_speed_mps=0.0,
                 )
             )
 

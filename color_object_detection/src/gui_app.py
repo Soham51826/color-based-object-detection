@@ -241,22 +241,38 @@ class ColorDetectionApp(object):
         self._area_var         = tk.StringVar(value="Area: --")
         self._solidity_var     = tk.StringVar(value="Solidity: --")
         self._circ_var         = tk.StringVar(value="Circularity: --")
+        self._tracks_var       = tk.StringVar(value="Tracks: 0 active")
+        self._distance_var     = tk.StringVar(value="Distance: -- cm")
+        self._tripwire_var     = tk.StringVar(value="Tripwire: In=0 Out=0")
+        self._roizone_var      = tk.StringVar(value="Zone: 0 occupants")
+        self._recording_var    = tk.StringVar(value="REC: IDLE")
         self._is_running       = False
         self._is_paused        = False
 
         # ---- Feature toggle BooleanVars --------------------------------
-        self._var_clahe    = tk.BooleanVar(value=True)
-        self._var_ema      = tk.BooleanVar(value=True)
-        self._var_trail    = tk.BooleanVar(value=True)
-        self._var_rotbbox  = tk.BooleanVar(value=False)
+        self._var_clahe       = tk.BooleanVar(value=True)
+        self._var_ema         = tk.BooleanVar(value=True)
+        self._var_trail       = tk.BooleanVar(value=True)
+        self._var_rotbbox     = tk.BooleanVar(value=False)
+        self._var_multitrack  = tk.BooleanVar(value=False)
+        self._var_metric      = tk.BooleanVar(value=False)
+        self._var_grayworld   = tk.BooleanVar(value=False)
+        self._var_tripwire    = tk.BooleanVar(value=False)
+        self._var_roizone     = tk.BooleanVar(value=False)
 
         # ---- Tracker ---------------------------------------------------
         self._tracker = ColorTracker(
+            color_names=["Red"],
             use_clahe=True,
             use_bilateral=False,
             use_ema_smoothing=True,
             show_trail=True,
             use_rotated_bbox=False,
+            use_gray_world=False,
+            use_multitrack=False,
+            show_metric_distance=False,
+            show_tripwire=False,
+            show_roi_zone=False,
         )
 
         # ---- Capture threading -----------------------------------------
@@ -325,10 +341,11 @@ class ColorDetectionApp(object):
         dash_frame.pack(side="left", fill="y", padx=(0, PAD), pady=PAD)
 
         for var in [self._source_label_var, self._fps_label_var, self._status_label_var,
-                    self._centroid_var, self._speed_var, self._angle_var,
-                    self._area_var, self._solidity_var, self._circ_var]:
+                    self._tracks_var, self._distance_var, self._centroid_var,
+                    self._speed_var, self._tripwire_var, self._roizone_var,
+                    self._recording_var]:
             lbl = self._make_label(dash_frame, textvariable=var)
-            lbl.pack(anchor="w", padx=6, pady=2)
+            lbl.pack(anchor="w", padx=6, pady=1)
 
         # --- Colour selector + feature toggles ---
         color_frame = self._make_labelframe(ctrl_frame, "Colour Preset")
@@ -349,14 +366,19 @@ class ColorDetectionApp(object):
                 *_COLOR_NAMES,
                 command=self._on_color_select,
             )
-        self._color_menu.pack(padx=8, pady=8)
+        self._color_menu.pack(padx=8, pady=4)
 
         # Feature checkboxes
         toggle_defs = [
-            ("Enable CLAHE Lighting Stabilization", self._var_clahe,   self._on_toggle_clahe),
-            ("Enable Kalman/EMA Centroid Smoothing", self._var_ema,    self._on_toggle_ema),
-            ("Show Motion Trajectory Trail",         self._var_trail,  self._on_toggle_trail),
-            ("Use Rotated Bounding Box",             self._var_rotbbox, self._on_toggle_rotbbox),
+            ("CLAHE Lighting Stabilization", self._var_clahe,      self._on_toggle_clahe),
+            ("Kalman & EMA Centroid Smooth", self._var_ema,        self._on_toggle_ema),
+            ("Motion Trajectory Trail",      self._var_trail,      self._on_toggle_trail),
+            ("Rotated Bounding Box (θ)",     self._var_rotbbox,    self._on_toggle_rotbbox),
+            ("Multi-Object Tracking (IDs)",  self._var_multitrack, self._on_toggle_multitrack),
+            ("Metric Distance & Speed (cm)", self._var_metric,     self._on_toggle_metric),
+            ("Gray World White Balance",     self._var_grayworld,  self._on_toggle_grayworld),
+            ("Directional Virtual Tripwire", self._var_tripwire,   self._on_toggle_tripwire),
+            ("Monitored ROI Zone & Dwell",   self._var_roizone,    self._on_toggle_roizone),
         ]
         for label_text, bvar, cmd in toggle_defs:
             if _USE_CTK:
@@ -370,7 +392,7 @@ class ColorDetectionApp(object):
                     font=("Consolas", 8), activebackground="#1e1e2e",
                     activeforeground="#ffffff",
                 )
-            cb.pack(anchor="w", padx=8, pady=2)
+            cb.pack(anchor="w", padx=8, pady=1)
 
         # --- HSV sliders ---
         slider_frame = self._make_labelframe(ctrl_frame, "HSV Calibration")
@@ -410,9 +432,9 @@ class ColorDetectionApp(object):
             val_lbl = self._make_label(slider_frame, textvariable=var, width=5)
             val_lbl.grid(row=row_idx, column=2, padx=4)
 
-        # === Bottom: action buttons ====================================
+        # === Bottom Row 1: capture and control action buttons =========
         btn_frame = self._make_frame(self._root)
-        btn_frame.pack(side="top", pady=(0, PAD))
+        btn_frame.pack(side="top", pady=(0, 4))
 
         btn_defs = [
             ("📹 Live Webcam",       "#2e7d32", self._on_live_webcam),
@@ -433,9 +455,32 @@ class ColorDetectionApp(object):
                 btn = tk.Button(
                     btn_frame, text=text, command=cmd,
                     bg=color, fg="white", relief="flat",
-                    padx=8, pady=6,
+                    padx=8, pady=5,
                 )
             btn.pack(side="left", padx=4)
+
+        # === Bottom Row 2: Advanced Interactive Modes & Analytics =====
+        app_btn_frame = self._make_frame(self._root)
+        app_btn_frame.pack(side="top", pady=(0, PAD))
+
+        app_btn_defs = [
+            ("🔴 Record Video",    "#c2185b", self._on_record_video),
+            ("📊 Log Telemetry",   "#283593", self._on_log_telemetry),
+        ]
+        for text, color, cmd in app_btn_defs:
+            if _USE_CTK:
+                btn = ctk.CTkButton(
+                    app_btn_frame, text=text, command=cmd,
+                    fg_color=color, hover_color=color,
+                    width=160, corner_radius=8,
+                )
+            else:
+                btn = tk.Button(
+                    app_btn_frame, text=text, command=cmd,
+                    bg=color, fg="white", relief="flat",
+                    padx=6, pady=5,
+                )
+            btn.pack(side="left", padx=3)
 
     # ------------------------------------------------------------------
     # Widget factory helpers
@@ -480,6 +525,21 @@ class ColorDetectionApp(object):
 
     def _on_toggle_rotbbox(self):
         self._tracker.use_rotated_bbox = self._var_rotbbox.get()
+
+    def _on_toggle_multitrack(self):
+        self._tracker.use_multitrack = self._var_multitrack.get()
+
+    def _on_toggle_metric(self):
+        self._tracker.show_metric_distance = self._var_metric.get()
+
+    def _on_toggle_grayworld(self):
+        self._tracker.use_gray_world = self._var_grayworld.get()
+
+    def _on_toggle_tripwire(self):
+        self._tracker.tripwire.is_enabled = self._var_tripwire.get()
+
+    def _on_toggle_roizone(self):
+        self._tracker.roi_zone.is_enabled = self._var_roizone.get()
 
     # ------------------------------------------------------------------
     # Eyedropper: click-to-pick colour from camera canvas
@@ -690,10 +750,40 @@ class ColorDetectionApp(object):
         cv2.imwrite(str(path), frame)
         msgbox.showinfo("Snapshot saved", "Frame saved successfully to:\n{}".format(path.name))
 
+    def _on_record_video(self):
+        if self._tracker.recorder.is_recording:
+            saved_path = self._tracker.recorder.stop()
+            self._recording_var.set("REC: IDLE")
+            name = saved_path.name if saved_path else "recording.mp4"
+            msgbox.showinfo("Recording Saved", f"Video recording saved successfully to:\n{name}")
+        else:
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_path = config.SNAPSHOT_DIR / f"recording_{ts}.mp4"
+            ok = self._tracker.recorder.start(out_path, width=config.CAPTURE_WIDTH, height=config.CAPTURE_HEIGHT, fps=config.RECORDING_FPS)
+            if ok:
+                self._recording_var.set("REC: RECORDING")
+                msgbox.showinfo("Video Recording", f"Recording started!\n\nSaving live output to:\n{out_path.name}")
+            else:
+                msgbox.showerror("Recording Error", "Could not start video writer with available codecs.")
+
+    def _on_log_telemetry(self):
+        if self._tracker.telemetry.is_active:
+            self._tracker.telemetry.stop()
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_path = config.SNAPSHOT_DIR / f"telemetry_{ts}.csv"
+            json_path = config.SNAPSHOT_DIR / f"telemetry_{ts}.json"
+            self._tracker.telemetry.export_csv(csv_path)
+            self._tracker.telemetry.export_json(json_path)
+            msgbox.showinfo("Telemetry Exported", f"Exported {self._tracker.telemetry.total_rows} frames of kinematics data to:\n{csv_path.name} & {json_path.name}")
+        else:
+            self._tracker.telemetry.start()
+            msgbox.showinfo("Telemetry Logging", "Telemetry logging started!\n\nRecording frame-by-frame kinematics, velocity, and distance.")
+
     def _on_color_select(self, selection):
         if selection == "Multi-Color":
             self._multi_color_mode = True
             self._active_mask_name = list(config.COLOR_PRESETS.keys())[0]
+            self._tracker.set_active_colors(list(config.COLOR_PRESETS.keys()))
         elif selection == "Custom":
             self._multi_color_mode = False
             # Keep active mask name; slider values apply to it
@@ -701,6 +791,7 @@ class ColorDetectionApp(object):
             self._multi_color_mode = False
             self._load_preset(selection)
             self._active_mask_name = selection
+            self._tracker.set_active_colors([selection])
             self._on_slider_change()
 
     def _on_slider_change(self):
@@ -806,6 +897,21 @@ class ColorDetectionApp(object):
     def _update_dashboard(self, result):
         self._fps_label_var.set("FPS: {:.1f}".format(result.fps))
 
+        # Tracks & Analytics telemetry
+        num_tracks = len(result.tracks)
+        self._tracks_var.set("Tracks: {} active".format(num_tracks))
+
+        info = result.analytics_info
+        if "tripwire_in" in info:
+            self._tripwire_var.set("Tripwire: In={} Out={}".format(info["tripwire_in"], info["tripwire_out"]))
+        if "roi_occupants" in info:
+            self._roizone_var.set("Zone: {} in zone".format(info["roi_occupants"]))
+        if info.get("is_recording"):
+            dur = info.get("record_duration", 0.0)
+            self._recording_var.set("REC: {:02d}:{:02d}".format(int(dur // 60), int(dur % 60)))
+        else:
+            self._recording_var.set("REC: IDLE")
+
         active_blobs = [
             b for b in result.blobs
             if b.color_name == self._active_mask_name
@@ -813,10 +919,20 @@ class ColorDetectionApp(object):
 
         if active_blobs:
             blob = active_blobs[0]
-            self._status_label_var.set("Status: TRACKING")
+            self._status_label_var.set("Status: TRACKING" + (f" (ID #{blob.track_id})" if blob.track_id else ""))
             cx, cy = blob.centroid if blob.centroid else (0, 0)
             self._centroid_var.set("Centroid: ({}, {})".format(cx, cy))
-            self._speed_var.set("Speed: {:.1f} px/s".format(blob.speed))
+
+            if blob.distance_cm is not None:
+                self._distance_var.set("Distance: {:.0f} cm".format(blob.distance_cm))
+            else:
+                self._distance_var.set("Distance: -- cm")
+
+            if self._var_metric.get() and blob.metric_speed_mps > 0.05:
+                self._speed_var.set("Speed: {:.1f} m/s ({:.0f} px/s)".format(blob.metric_speed_mps, blob.speed))
+            else:
+                self._speed_var.set("Speed: {:.1f} px/s".format(blob.speed))
+
             if self._var_rotbbox.get():
                 self._angle_var.set("Angle: {:+.1f}° ({}x{})".format(blob.angle, blob.dimensions[0], blob.dimensions[1]))
             else:
@@ -827,6 +943,7 @@ class ColorDetectionApp(object):
         else:
             self._status_label_var.set("Status: LOST")
             self._centroid_var.set("Centroid: --, --")
+            self._distance_var.set("Distance: -- cm")
             self._speed_var.set("Speed: 0.0 px/s")
             self._angle_var.set("Angle: --")
             self._area_var.set("Area: --")
